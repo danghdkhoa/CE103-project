@@ -18,11 +18,17 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
+#include "stm32f103xb.h"
+#include "stm32f1xx_hal_cortex.h"
+#include "stm32f1xx_hal_def.h"
+#include "stm32f1xx_hal_gpio.h"
+#include "stm32f1xx_hal_uart.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include <stdint.h>
 #include <string.h>
+#include <stdbool.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -45,6 +51,12 @@ UART_HandleTypeDef huart1;
 
 /* USER CODE BEGIN PV */
 uint8_t alert_flag = 0;
+
+uint8_t rx_index;
+uint8_t rx_data;
+uint8_t rx_buffer[100];
+volatile uint8_t rx_flag = 0;
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -62,13 +74,12 @@ void ESP8266_SendAT(char *cmd) {
     HAL_UART_Transmit(&huart1, (uint8_t *)cmd, strlen(cmd), 1000);
 }
 
-void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
-    if (GPIO_Pin == GPIO_PIN_0) { 
-        HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, GPIO_PIN_SET);
-        
-        alert_flag = 1;
-    }
-}
+// void ESP8266_ReceiveAT() {
+//     HAL_UART_Receive_IT(&huart1, &rx_data, 6);
+
+// }
+
+
 /* USER CODE END 0 */
 
 /**
@@ -101,14 +112,35 @@ int main(void)
   MX_GPIO_Init();
   MX_USART1_UART_Init();
   /* USER CODE BEGIN 2 */
-
+  HAL_UART_Receive_IT(&huart1, &rx_data, 1);
 
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
-  {
+  { 
+
+    if (rx_flag == 1) {
+        if (strcmp((char*)rx_buffer, "PIRoff") == 0) {
+            HAL_NVIC_DisableIRQ(EXTI0_IRQn);                      
+            HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, GPIO_PIN_RESET); 
+            alert_flag = 0;
+        }
+        else if (strcmp((char*)rx_buffer, "PIRon") == 0) {
+            __HAL_GPIO_EXTI_CLEAR_IT(GPIO_PIN_0);
+            HAL_NVIC_ClearPendingIRQ(EXTI0_IRQn);
+            alert_flag = 0;
+            HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, GPIO_PIN_RESET);
+            HAL_NVIC_EnableIRQ(EXTI0_IRQn); 
+        }
+        
+
+        rx_index = 0;
+        rx_flag = 0;
+        memset(rx_buffer, 0, sizeof(rx_buffer));
+    }
+
     if (alert_flag == 1) {
         ESP8266_SendAT("ALARM\n"); 
         HAL_Delay(3000); 
@@ -242,7 +274,33 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
+    if (GPIO_Pin == GPIO_PIN_0) { 
+        HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, GPIO_PIN_SET);
+        
+        alert_flag = 1;
+    }
+}
 
+
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
+  if (huart->Instance == USART1) {
+    if (rx_flag == 0) { 
+            
+      if (rx_data != (uint8_t)'\n' && rx_data != (uint8_t)'\r') {
+        rx_buffer[rx_index++] = rx_data;
+      }
+            
+            
+      if (rx_data == (uint8_t)'\n' || rx_data == (uint8_t)'\r' || rx_index >= (uint8_t)98) {
+          rx_buffer[rx_index] = '\0'; 
+          rx_flag = 1;                
+      }
+    }
+    
+    HAL_UART_Receive_IT(&huart1, &rx_data, 1);
+  }
+}
 /* USER CODE END 4 */
 
 /**
