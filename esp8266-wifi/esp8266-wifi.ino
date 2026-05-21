@@ -74,7 +74,7 @@ void handleNewMessages(int numNewMessages)
 void setup() {
   Serial.begin(9600);
   
-  configTime(0, 0, "pool.ntp.org");      // get UTC time via NTP
+  configTime(7 * 3600, 0, "pool.ntp.org");      // get UTC time via NTP
   client.setTrustAnchors(&cert); // Add root certificate for api.telegram.org
   // Connect to Wi-Fi
   WiFi.begin(ssid, password);
